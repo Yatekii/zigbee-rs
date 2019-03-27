@@ -1,0 +1,8 @@
+[package]
+name = "zigbee-rs"
+version = "0.1.0"
+authors = ["Noah Huesser <yatekii@yatekii.ch>"]
+edition = "2018"
+
+[dependencies]
+bitflags = "*"
