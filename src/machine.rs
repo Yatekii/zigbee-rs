@@ -8,6 +8,7 @@ use crate::init::{
     try_network_steering,
     try_network_formation,
     try_finding_and_binding,
+    begin_commissioning,
 };
 
 pub fn process(state: MachineState) -> MachineState {
@@ -20,5 +21,7 @@ pub fn process(state: MachineState) -> MachineState {
         MachineState::Commissioning(state, CommissioningMode::NetworkSteering) => try_network_steering(state),
         MachineState::Commissioning(state, CommissioningMode::NetworkFormation) => try_network_formation(state),
         MachineState::Commissioning(state, CommissioningMode::FindingAndBinding) => try_finding_and_binding(state),
+        // TODO:
+        _ => MachineState::RestorePersistentData,
     }
 }

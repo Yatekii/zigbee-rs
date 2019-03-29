@@ -3,11 +3,10 @@ use bitflags::bitflags;
 pub struct State {
     pub device_type: DeviceType,
     pub bdbNodeIsOnANetwork: bool,
-    pub bdbCommissioningCapability: CommissioningMode,
-    pub bdbCommissioningMode: CommissioningMode,
+    pub bdbCommissioningCapability: CommissioningModeFlag,
+    pub bdbCommissioningMode: CommissioningModeFlag,
     pub bdbcTLPrimaryChannelSet: u8,
     pub bdbCommitssioningStatus: CommissioningStatus,
-    pub bdbNodeIsOnANetwork: bool,
 
 }
 
@@ -16,11 +15,10 @@ impl State {
         Self {
             device_type: DeviceType::EndDevice,
             bdbNodeIsOnANetwork: false,
-            bdbCommissioningCapability: CommissioningMode::None,
-            bdbCommissioningMode: CommissioningMode::None,
+            bdbCommissioningCapability: CommissioningModeFlag::None,
+            bdbCommissioningMode: CommissioningModeFlag::None,
             bdbcTLPrimaryChannelSet: 0,
             bdbCommitssioningStatus: CommissioningStatus::SUCCESS,
-            bdbNodeIsOnANetwork: true,
         }
     }
 }
@@ -31,8 +29,21 @@ pub enum DeviceType {
     EndDevice = 0b010,
 }
 
+pub enum CommissioningMode {
+    Touchlink         = 0b0000001,
+    NetworkSteering   = 0b0000010,
+    NetworkFormation  = 0b0000100,
+    FindingAndBinding = 0b0001000,
+}
+
+impl From<CommissioningMode> for CommissioningModeFlag {
+    fn from(mode: CommissioningMode) -> Self {
+        CommissioningModeFlag::from_bits(mode as u8).expect("UB encountered. This is a bug and should be reported!")
+    }
+}
+
 bitflags! {
-    pub struct CommissioningMode: u8 {
+    pub struct CommissioningModeFlag: u8 {
         const Touchlink         = 0b0000001;
         const NetworkSteering   = 0b0000010;
         const NetworkFormation  = 0b0000100;
