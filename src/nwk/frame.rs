@@ -270,7 +270,7 @@ pub struct NPDUFrame {
     pub source_ieee_address: Option<[u8; 8]>,
     pub multicast_control: Option<u8>,
     pub source_route_frame: Option<SourceRouteFrame>,
-    pub payload: Payload,
+    pub payload: Payload<u8>,
 }
 
 const MIN_NUM_BYTES: usize = 8;
@@ -337,7 +337,8 @@ impl Serde<NPDUFrame, SerdeError> for NPDUFrame {
                 false
             };
 
-        total_length += self.payload.serialize(&mut data[total_length..])? as usize;
+        // TODO:
+        // total_length += self.payload.serialize(&mut data[total_length..])? as usize;
 
         control.serialize(&mut data[0..2])?;
 
@@ -410,7 +411,7 @@ impl Serde<NPDUFrame, SerdeError> for NPDUFrame {
                     source_ieee_address: source_ieee_address,
                     multicast_control: multicast_control,
                     source_route_frame: source_route_frame,
-                    payload: Payload::deserialize(&data[total_length..])?,
+                    payload: Payload::InterPan,
                 })
             }
         }
