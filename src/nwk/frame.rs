@@ -81,7 +81,7 @@ pub struct FrameControl {
     pub frame_type: FrameType,
     // 3.3.1.1.2 Protocol Version Sub-Field
     pub protocol_version: u8,
-    /// 3.3.1.1.3 Discover Route Sub-Field
+    // 3.3.1.1.3 Discover Route Sub-Field
     pub discover_route: DiscoverRoute,
     // 3.3.1.1.4 Multicast Flag Sub-Field
     multicast: bool,
@@ -130,6 +130,70 @@ impl Serde<FrameControl, SerdeError> for FrameControl {
                 contains_source_route_frame: if (data[1] >> 2) & 0b1 == 1 { true } else { false },
                 contains_destination_ieee_address: if (data[1] >> 3) & 0b1 == 1 { true } else { false },
                 contains_source_ieee_address: if (data[1] >> 4) & 0b1 == 1 { true } else { false },
+            })
+        }
+    }
+}
+
+/// 3.3.1.8.1 Multicast Mode Sub-Field
+#[derive(Copy, Clone)]
+pub enum MulticastMode {
+    NonmemberMode = 0b00,
+    MemberMode = 0b01,
+}
+
+impl Serde<MulticastMode, SerdeError> for MulticastMode {
+    fn serialize(&self, data: &mut [u8]) -> Result<u8, SerdeError> {
+        unimplemented!();
+    }
+    
+    fn deserialize(data: &[u8]) -> Result<Self, SerdeError> {
+        if data.len() != 1 {
+            Err(SerdeError::WrongNumberOfBytes)
+        } else {
+            let frame_type = data[0] & 0b11;
+            if frame_type == MulticastMode::NonmemberMode as u8 {
+                Ok(MulticastMode::NonmemberMode)
+            } else if frame_type == MulticastMode::MemberMode as u8 {
+                Ok(MulticastMode::MemberMode)
+            } else {
+                Err(SerdeError::UnknownFrameType)
+            }
+        }  
+    }
+}
+
+/// 3.3.1.8 Multicast Control Field
+#[derive(Copy, Clone)]
+pub struct MulticastControl {
+    // 3.3.1.8.1 Multicast Mode Sub-Field
+    pub multicast_mode: MulticastMode,
+    // 3.3.1.8.2 NonmemberRadius Sub-Field
+    pub nonmember_radius: u8,
+    // 3.3.1.8.3 MaxNonmemberRadius Sub-Field
+    pub max_nonmember_radius: u8,
+}
+
+impl Serde<MulticastControl, SerdeError> for MulticastControl {
+    fn serialize(&self, data: &mut [u8]) -> Result<u8, SerdeError> {
+        if data.len() != 2 {
+            Err(SerdeError::WrongNumberOfBytes)
+        } else {
+            data[0] = self.multicast_mode as u8
+                    & (self.nonmember_radius << 2)
+                    & (self.max_nonmember_radius << 5);
+            Ok(1)
+        }
+    }
+    
+    fn deserialize(data: &[u8]) -> Result<Self, SerdeError> {
+        if data.len() != 2 {
+            Err(SerdeError::WrongNumberOfBytes)
+        } else {
+            Ok(Self {
+                multicast_mode: MulticastMode::deserialize(&data[0..1])?,
+                nonmember_radius: (data[0] >> 2) & 0b111,
+                max_nonmember_radius: (data[0] >> 5) & 0b111,
             })
         }
     }
@@ -185,7 +249,6 @@ impl Serde<SourceRouteFrame, SerdeError> for SourceRouteFrame {
         } else {
             let mut relay_list = vec![[0; 2]; data[0] as usize];
             for (i, chunk) in data[2..].chunks(2).enumerate() {
-                let mut source_address = [0; 2];
                 relay_list[i].clone_from_slice(chunk);
             }
             Ok(Self {
