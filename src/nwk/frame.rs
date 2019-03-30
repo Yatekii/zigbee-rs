@@ -1,3 +1,4 @@
+use crate::nwk::payload::DataFrame;
 use crate::nwk::payload::Payload;
 use crate::serde::Serde;
 
@@ -6,6 +7,7 @@ pub enum SerdeError {
     WrongNumberOfBytes,
     UnknownFrameType,
     BrokenRelayList,
+    UnknownNWKCommand,
 }
 
 /// 3.3.1.1.1 Frame Type Sub-Field
@@ -270,7 +272,7 @@ pub struct NPDUFrame {
     pub source_ieee_address: Option<[u8; 8]>,
     pub multicast_control: Option<u8>,
     pub source_route_frame: Option<SourceRouteFrame>,
-    pub payload: Payload<u8>,
+    pub payload: Payload,
 }
 
 const MIN_NUM_BYTES: usize = 8;
@@ -411,7 +413,11 @@ impl Serde<NPDUFrame, SerdeError> for NPDUFrame {
                     source_ieee_address: source_ieee_address,
                     multicast_control: multicast_control,
                     source_route_frame: source_route_frame,
-                    payload: Payload::InterPan,
+                    payload: match frame_control.frame_type {
+                        FrameTypeEnum::Data => Payload::Data(DataFrame {}),
+                        FrameTypeEnum::NWKCommand => Payload::new_nwk_command(&data[total_length..])?,
+                        FrameTypeEnum::InterPan => Payload::InterPan,
+                    },
                 })
             }
         }
