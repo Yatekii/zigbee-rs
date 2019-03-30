@@ -1,3 +1,4 @@
+use crate::nwk::payload::Payload;
 use crate::serde::Serde;
 
 pub enum SerdeError {
@@ -9,13 +10,13 @@ pub enum SerdeError {
 
 /// 3.3.1.1.1 Frame Type Sub-Field
 #[derive(Copy, Clone)]
-pub enum FrameType {
+pub enum FrameTypeEnum {
     Data = 0b00,
     NWKCommand = 0b01,
     InterPan = 0b11,
 }
 
-impl Serde<FrameType, SerdeError> for FrameType {
+impl Serde<FrameTypeEnum, SerdeError> for FrameTypeEnum {
     fn serialize(&self, data: &mut [u8]) -> Result<u8, SerdeError> {
         if data.len() == 1 {
             Ok(*self as u8)
@@ -29,12 +30,12 @@ impl Serde<FrameType, SerdeError> for FrameType {
             Err(SerdeError::WrongNumberOfBytes)
         } else {
             let frame_type = data[0] & 0b11;
-            if frame_type == FrameType::Data as u8 {
-                Ok(FrameType::Data)
-            } else if frame_type == FrameType::InterPan as u8 {
-                Ok(FrameType::InterPan)
-            } else if frame_type == FrameType::NWKCommand as u8 {
-                Ok(FrameType::NWKCommand)
+            if frame_type == FrameTypeEnum::Data as u8 {
+                Ok(FrameTypeEnum::Data)
+            } else if frame_type == FrameTypeEnum::InterPan as u8 {
+                Ok(FrameTypeEnum::InterPan)
+            } else if frame_type == FrameTypeEnum::NWKCommand as u8 {
+                Ok(FrameTypeEnum::NWKCommand)
             } else {
                 Err(SerdeError::UnknownFrameType)
             }
@@ -78,7 +79,7 @@ impl Serde<DiscoverRoute, SerdeError> for DiscoverRoute {
 #[derive(Copy, Clone)]
 pub struct FrameControl {
     // 3.3.1.1.1 Frame Type Sub-Field
-    pub frame_type: FrameType,
+    pub frame_type: FrameTypeEnum,
     // 3.3.1.1.2 Protocol Version Sub-Field
     pub protocol_version: u8,
     // 3.3.1.1.3 Discover Route Sub-Field
@@ -122,7 +123,7 @@ impl Serde<FrameControl, SerdeError> for FrameControl {
             Err(SerdeError::WrongNumberOfBytes)
         } else {
             Ok(Self {
-                frame_type: FrameType::deserialize(&data[0..1])?,
+                frame_type: FrameTypeEnum::deserialize(&data[0..1])?,
                 protocol_version: (data[0] >> 2) & 0b1111,
                 discover_route: DiscoverRoute::deserialize(&data[0..1])?,
                 multicast: if (data[1] >> 0) & 0b1 == 1 { true } else { false },
@@ -269,7 +270,7 @@ pub struct NPDUFrame {
     pub source_ieee_address: Option<[u8; 8]>,
     pub multicast_control: Option<u8>,
     pub source_route_frame: Option<SourceRouteFrame>,
-    pub payload: Option<[u8; 42]>,
+    pub payload: Payload,
 }
 
 const MIN_NUM_BYTES: usize = 8;
@@ -336,15 +337,7 @@ impl Serde<NPDUFrame, SerdeError> for NPDUFrame {
                 false
             };
 
-        if let Some(v) = &self.payload {
-            let len = v.len();
-            if data.len() > total_length + len {
-                data[total_length..].clone_from_slice(v);
-                total_length += len as usize;
-            } else {
-                return Err(SerdeError::NotEnoughSpace)
-            }
-        }
+        total_length += self.payload.serialize(&mut data[total_length..])? as usize;
 
         control.serialize(&mut data[0..2])?;
 
@@ -359,53 +352,66 @@ impl Serde<NPDUFrame, SerdeError> for NPDUFrame {
             let mut source_address = [0; 2];
             destination_address.clone_from_slice(&data[2..4]);
             source_address.clone_from_slice(&data[4..6]);
-            let mut frame = NPDUFrame {
-                control: FrameControl::deserialize(&data[0..2])?,
-                destination_address: destination_address,
-                source_address: source_address,
-                radius: data[6],
-                sequence_number: data[7],
-                destination_ieee_address: None,
-                source_ieee_address: None,
-                multicast_control: None,
-                source_route_frame: None,
-                payload: None,
-            };
+
+            let frame_control = FrameControl::deserialize(&data[0..2])?;
 
             let mut total_length = MIN_NUM_BYTES;
 
-            if frame.control.contains_destination_ieee_address {
-                let mut destination_ieee_address = [0; 8];
-                destination_ieee_address.clone_from_slice(&data[total_length..total_length + 8]);
-                frame.destination_ieee_address = Some(destination_ieee_address);
-                total_length += 8;
-            }
+            let destination_ieee_address =
+                if frame_control.contains_destination_ieee_address {
+                    let mut destination_ieee_address = [0; 8];
+                    destination_ieee_address.clone_from_slice(&data[total_length..total_length + 8]); 
+                    total_length += 8;
+                    Some(destination_ieee_address)
+                } else {
+                    None
+                };
 
-            if frame.control.contains_source_ieee_address {
-                let mut source_ieee_address = [0; 8];
-                source_ieee_address.clone_from_slice(&data[total_length..total_length + 8]);
-                frame.source_ieee_address = Some(source_ieee_address);
-                total_length += 8;
-            }
+            let source_ieee_address =
+                if frame_control.contains_source_ieee_address {
+                    let mut source_ieee_address = [0; 8];
+                    source_ieee_address.clone_from_slice(&data[total_length..total_length + 8]);
+                    total_length += 8;
+                    Some(source_ieee_address)
+                } else {
+                    None
+                };
 
-            if frame.control.multicast {
-                frame.multicast_control = Some(data[total_length]);
-                total_length += 1;
-            }
+            let multicast_control =
+                if frame_control.multicast {
+                    let multicast_control = Some(data[total_length]);
+                    total_length += 1;
+                    multicast_control
+                } else {
+                    None
+                };
 
-            if frame.control.contains_source_route_frame {
-                let data_end = total_length + 2 + data[total_length] as usize;
-                frame.source_route_frame = Some(SourceRouteFrame::deserialize(&data[total_length..data_end])?);
-                total_length += data[total_length] as usize;
-                total_length += 2;
-            }
-
-            // TODO: Handle payload
+            let source_route_frame =
+                if frame_control.contains_source_route_frame {
+                    let data_end = total_length + 2 + data[total_length] as usize;
+                    let source_route_frame = Some(SourceRouteFrame::deserialize(&data[total_length..data_end])?);
+                    total_length += data[total_length] as usize;
+                    total_length += 2;
+                    source_route_frame
+                } else {
+                    None
+                };
 
             if data.len() < total_length as usize {
                 Err(SerdeError::WrongNumberOfBytes)
             } else {
-                Ok(frame)
+                Ok(NPDUFrame {
+                    control: frame_control,
+                    destination_address: destination_address,
+                    source_address: source_address,
+                    radius: data[6],
+                    sequence_number: data[7],
+                    destination_ieee_address: destination_ieee_address,
+                    source_ieee_address: source_ieee_address,
+                    multicast_control: multicast_control,
+                    source_route_frame: source_route_frame,
+                    payload: Payload::deserialize(&data[total_length..])?,
+                })
             }
         }
     }
