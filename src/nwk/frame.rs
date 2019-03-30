@@ -75,6 +75,7 @@ impl Serde<DiscoverRoute, SerdeError> for DiscoverRoute {
 }
 
 /// 3.3.1.1 Frame Control Field
+#[derive(Copy, Clone)]
 pub struct FrameControl {
     // 3.3.1.1.1 Frame Type Sub-Field
     pub frame_type: FrameType,
@@ -208,14 +209,86 @@ pub struct NPDUFrame {
     pub payload: Option<[u8; 42]>,
 }
 
+const MIN_NUM_BYTES: usize = 8;
+
 impl Serde<NPDUFrame, SerdeError> for NPDUFrame {
     fn serialize(&self, data: &mut [u8]) -> Result<u8, SerdeError> {
-        Err(SerdeError::NotEnoughSpace)
+        let mut control = self.control;
+        let mut total_length = MIN_NUM_BYTES;
+
+        data[2..4].clone_from_slice(&self.destination_address);
+        data[4..6].clone_from_slice(&self.source_address);
+        data[6] = self.radius;
+        data[7] = self.sequence_number;
+
+        control.contains_destination_ieee_address =
+            if let Some(v) = self.destination_ieee_address {
+                if data.len() > total_length + 8 {
+                    data[total_length..total_length + 8].clone_from_slice(&v);
+                    total_length += 8;
+                    true
+                } else {
+                    return Err(SerdeError::NotEnoughSpace)
+                }
+            } else {
+                false
+            };
+
+        control.contains_source_ieee_address =
+            if let Some(v) = self.source_ieee_address {
+                if data.len() > total_length + 8 {
+                    data[total_length..total_length + 8].clone_from_slice(&v);
+                    total_length += 8;
+                    true
+                } else {
+                    return Err(SerdeError::NotEnoughSpace)
+                }
+            } else {
+                false
+            };
+
+        control.multicast =
+            if let Some(v) = self.multicast_control {
+                if data.len() > total_length + 8 {
+                    data[total_length] = v;
+                    total_length += 1;
+                    true
+                } else {
+                    return Err(SerdeError::NotEnoughSpace)
+                }
+            } else {
+                false
+            };
+
+        control.contains_source_route_frame =
+            if let Some(v) = &self.source_route_frame {
+                if data.len() > total_length + 8 {
+                    let length = v.serialize(&mut data[total_length..total_length + 8])?;
+                    total_length += length as usize;
+                    true
+                } else {
+                    return Err(SerdeError::NotEnoughSpace)
+                }
+            } else {
+                false
+            };
+
+        if let Some(v) = &self.payload {
+            let len = v.len();
+            if data.len() > total_length + len {
+                data[total_length..].clone_from_slice(v);
+                total_length += len as usize;
+            } else {
+                return Err(SerdeError::NotEnoughSpace)
+            }
+        }
+
+        control.serialize(&mut data[0..2])?;
+
+        Ok(total_length as u8)
     }
     
     fn deserialize(data: &[u8]) -> Result<Self, SerdeError> {
-        const MIN_NUM_BYTES: usize = 8;
-
         if data.len() < MIN_NUM_BYTES {
             Err(SerdeError::WrongNumberOfBytes)
         } else {
